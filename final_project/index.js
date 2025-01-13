@@ -1,95 +1,51 @@
-const express = require('express');
-const jwt = require('jsonwebtoken');
-const session = require('express-session')
-const routes = require('./router/friends.js')
+// Import necessary modules
+const express = require('express'); // Import Express framework
+const jwt = require('jsonwebtoken'); // Import JSON Web Token for authentication
+const session = require('express-session'); // Import Express session for session management
 
-let users = []
+// Import route handlers
+const customer_routes = require('./router/auth_users.js').authenticated; // Import customer routes with authentication
+const genl_routes = require('./router/general.js').general; // Import general routes
 
-const doesExist = (username)=>{
-  let userswithsamename = users.filter((user)=>{
-    return user.username === username
-  });
-  if(userswithsamename.length > 0){
-    return true;
-  } else {
-    return false;
-  }
-}
-
-const authenticatedUser = (username,password)=>{
-  let validusers = users.filter((user)=>{
-    return (user.username === username && user.password === password)
-  });
-  if(validusers.length > 0){
-    return true;
-  } else {
-    return false;
-  }
-}
-
+// Create an Express application instance
 const app = express();
 
-app.use(session({secret:"fingerpint"},resave=true,saveUninitialized=true));
-
+// Middleware to parse incoming JSON requests
 app.use(express.json());
 
-app.use("/friends", function auth(req,res,next){
-   if(req.session.authorization) {
-       token = req.session.authorization['accessToken'];
-       jwt.verify(token, "access",(err,user)=>{
-           if(!err){
-               req.user = user;
-               next();
-           }
-           else{
-               return res.status(403).json({message: "User not authenticated"})
-           }
-        });
-    } else {
-        return res.status(403).json({message: "User not logged in"})
+// Middleware to initialize session for routes under "/customer" path
+app.use("/customer", session({secret:"fingerprint_customer",resave: true, saveUninitialized: true}));
+
+// Middleware for authentication for routes under "/customer/auth/*" path
+app.use("/customer/auth/*", function auth(req, res, next){
+    // Get the JWT token from the request header or query parameter
+    const token = req.headers.authorization; // Assuming token is passed in the Authorization header
+    
+    // Check if token is provided
+    if (!token) {
+        return res.status(401).json({ message: "Unauthorized: Token is missing" });
+    }
+
+    try {
+        // Verify the token
+        const decoded = jwt.verify(token, "your_secret_key"); // Replace "your_secret_key" with your actual secret key
+
+        // Token is valid, proceed to the next middleware or route handler
+        next();
+    } catch (error) {
+        // Token is invalid or expired
+        return res.status(401).json({ message: "Unauthorized: Invalid token" });
     }
 });
 
-app.post("/login", (req,res) => {
-  const username = req.body.username;
-  const password = req.body.password;
+// Define the port number
+const PORT = 5000;
 
-  if (!username || !password) {
-      return res.status(404).json({message: "Error logging in"});
-  }
+// Mount customer routes under "/customer" path
+app.use("/customer", customer_routes);
 
-  if (authenticatedUser(username,password)) {
-    let accessToken = jwt.sign({
-      data: password
-    }, 'access', { expiresIn: 60 * 60 });
+// Mount general routes under "/" path
+app.use("/", genl_routes);
 
-    req.session.authorization = {
-      accessToken,username
-  }
-  return res.status(200).send("User successfully logged in");
-  } else {
-    return res.status(208).json({message: "Invalid Login. Check username and password"});
-  }
-});
-
-app.post("/register", (req,res) => {
-  const username = req.body.username;
-  const password = req.body.password;
-
-  if (username && password) {
-    if (!doesExist(username)) { 
-      users.push({"username":username,"password":password});
-      return res.status(200).json({message: "User successfully registred. Now you can login"});
-    } else {
-      return res.status(404).json({message: "User already exists!"});    
-    }
-  } 
-  return res.status(404).json({message: "Unable to register user."});
-});
-
-
-const PORT =5000;
-
-app.use("/friends", routes);
-
-app.listen(PORT,()=>console.log("Server is running"));
+// Start the server and listen on the defined port
+app.listen(PORT, () => console.log("Server is running on port", PORT));
